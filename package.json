@@ -2,7 +2,20 @@
   "name": "@anthropic-ai/claude-code",
   "version": "2.0.67",
   "bin": {
-    "claude": "cli.js"
+    "claude": "cli.js",
+    "claude-deobfuscated": "cli-deobfuscated.js"
+  },
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./constants": "./src/constants/index.js",
+    "./utils": "./src/utils/index.js",
+    "./config": "./src/config/index.js",
+    "./api": "./src/api/anthropic-client.js",
+    "./tools": "./src/tools/index.js",
+    "./ui": "./src/ui/index.js",
+    "./services": "./src/services/conversation.js",
+    "./cli": "./src/cli/index.js"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -16,6 +29,8 @@
     "url": "https://github.com/anthropics/claude-code/issues"
   },
   "scripts": {
+    "start": "node cli-deobfuscated.js",
+    "start:original": "node cli.js",
     "prepare": "node -e \"if (!process.env.AUTHORIZED) { console.error('ERROR: Direct publishing is not allowed.\\nPlease see the release workflow documentation to publish this package.'); process.exit(1); }\""
   },
   "dependencies": {},
