@@ -7,12 +7,21 @@
 export * from "./colors.js";
 export * from "./spinner.js";
 
-import colors from "./colors.js";
-import spinner from "./spinner.js";
+import { colors, themes, setTheme, themed, symbols, getSymbols } from "./colors.js";
+import { Spinner, spinnerFrames, createSpinner, ProgressBar } from "./spinner.js";
 
-export { colors, spinner };
+// Re-export colors object explicitly
+export { colors };
 
 export default {
-  ...colors,
-  ...spinner
+  colors,
+  themes,
+  setTheme,
+  themed,
+  symbols,
+  getSymbols,
+  Spinner,
+  spinnerFrames,
+  createSpinner,
+  ProgressBar
 };

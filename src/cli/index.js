@@ -11,9 +11,11 @@ import { debug, info, error as logError, writeStdout, writeStderr } from "../uti
 import { getSettings } from "../config/settings.js";
 import { getClient } from "../api/anthropic-client.js";
 import { getToolDefinitions, executeTool, markFileAsRead } from "../tools/index.js";
-import { getCurrentConversation, Message, Conversation } from "../services/conversation.js";
+import { getCurrentConversation, setCurrentConversation, Message, Conversation } from "../services/conversation.js";
 import { VERSION, EXIT_CODES } from "../constants/index.js";
 import { colors, createSpinner } from "../ui/index.js";
+import { REPL } from "../services/repl.js";
+import { mcpManager } from "../services/mcp.js";
 
 /**
  * Main CLI entry point
@@ -180,14 +182,26 @@ async function runContinueMode(args, settings, prompt) {
   }
 
   debug(`Resuming session: ${conversation.sessionId}`);
+  writeStdout(`\n${colors.dim("Resuming session:")} ${colors.cyan(conversation.sessionId)}\n\n`);
+
+  // Set as current conversation
+  setCurrentConversation(conversation);
+
+  // Start REPL with resumed conversation
+  const repl = new REPL({
+    args,
+    settings,
+    conversation
+  });
+
+  await repl.initialize();
 
   // Add new prompt if provided
   if (prompt) {
-    conversation.addMessage(Message.user(prompt));
+    await repl.handleMessage(prompt);
   }
 
-  // TODO: Continue conversation...
-  writeStdout(`Resumed session ${conversation.sessionId}\n`);
+  await repl.start();
 }
 
 /**
@@ -199,28 +213,44 @@ async function runContinueMode(args, settings, prompt) {
 async function runInteractiveMode(args, settings, initialPrompt) {
   debug("Running in interactive mode");
 
+  // Load MCP servers
+  try {
+    mcpManager.loadConfig();
+    const mcpResults = await mcpManager.connectAll();
+    for (const result of mcpResults) {
+      if (result.success) {
+        debug(`Connected to MCP server: ${result.name}`);
+      } else {
+        debug(`Failed to connect to MCP server ${result.name}: ${result.error}`);
+      }
+    }
+  } catch (err) {
+    debug(`Failed to load MCP servers: ${err.message}`);
+  }
+
   // Print welcome message
   writeStdout(`\n${colors.claude("Claude Code")} v${VERSION}\n`);
   writeStdout(colors.dim("Type your message or /help for commands\n\n"));
 
+  // Create conversation
   const conversation = getCurrentConversation({ cwd: args.cwd });
 
-  // Handle initial prompt
+  // Create and initialize REPL
+  const repl = new REPL({
+    args,
+    settings,
+    conversation
+  });
+
+  await repl.initialize();
+
+  // Handle initial prompt if provided
   if (initialPrompt) {
-    conversation.addMessage(Message.user(initialPrompt));
-    // TODO: Process initial prompt
+    await repl.handleMessage(initialPrompt);
   }
 
-  // TODO: Start interactive loop
-  // This would involve:
-  // 1. Reading user input (using readline or similar)
-  // 2. Sending messages to the API
-  // 3. Handling tool use
-  // 4. Displaying responses
-  // 5. Handling slash commands
-
-  writeStdout(colors.dim("Interactive mode not fully implemented in deobfuscated version.\n"));
-  writeStdout(colors.dim("See the original cli.js for full functionality.\n"));
+  // Start the REPL
+  await repl.start();
 }
 
 export default {

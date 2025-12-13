@@ -26,7 +26,7 @@ export * from "./config/settings.js";
 export * from "./api/anthropic-client.js";
 export * from "./tools/index.js";
 export * from "./ui/index.js";
-export * from "./services/conversation.js";
+export * from "./services/index.js";
 export * from "./cli/index.js";
 
 // Import for default export
@@ -36,7 +36,7 @@ import * as config from "./config/settings.js";
 import * as api from "./api/anthropic-client.js";
 import * as tools from "./tools/index.js";
 import * as ui from "./ui/index.js";
-import * as services from "./services/conversation.js";
+import * as services from "./services/index.js";
 import { main } from "./cli/index.js";
 
 /**

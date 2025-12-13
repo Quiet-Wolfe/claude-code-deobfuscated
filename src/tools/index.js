@@ -17,6 +17,10 @@ export * from "./todo-write-tool.js";
 export * from "./web-search-tool.js";
 export * from "./web-fetch-tool.js";
 export * from "./notebook-edit-tool.js";
+export * from "./bash-output-tool.js";
+export * from "./kill-shell-tool.js";
+export * from "./skill-tool.js";
+export * from "./slash-command-tool.js";
 
 import { globalRegistry } from "./base-tool.js";
 import { readTool } from "./read-tool.js";
@@ -31,6 +35,10 @@ import { todoWriteTool } from "./todo-write-tool.js";
 import { webSearchTool } from "./web-search-tool.js";
 import { webFetchTool } from "./web-fetch-tool.js";
 import { notebookEditTool } from "./notebook-edit-tool.js";
+import { bashOutputTool } from "./bash-output-tool.js";
+import { killShellTool } from "./kill-shell-tool.js";
+import { skillTool } from "./skill-tool.js";
+import { slashCommandTool } from "./slash-command-tool.js";
 
 // Register all built-in tools
 globalRegistry.register(readTool);
@@ -45,6 +53,10 @@ globalRegistry.register(todoWriteTool);
 globalRegistry.register(webSearchTool);
 globalRegistry.register(webFetchTool);
 globalRegistry.register(notebookEditTool);
+globalRegistry.register(bashOutputTool);
+globalRegistry.register(killShellTool);
+globalRegistry.register(skillTool);
+globalRegistry.register(slashCommandTool);
 
 export { globalRegistry };
 
@@ -116,5 +128,9 @@ export default {
   todoWriteTool,
   webSearchTool,
   webFetchTool,
-  notebookEditTool
+  notebookEditTool,
+  bashOutputTool,
+  killShellTool,
+  skillTool,
+  slashCommandTool
 };
