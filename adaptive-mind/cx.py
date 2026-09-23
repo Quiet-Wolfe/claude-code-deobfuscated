@@ -20,6 +20,7 @@ Controls with *identical* trainable parameters:
   * erdos_renyi   : same neurons, same number of edges and weights, random targets
 And an unconstrained reference:
   * dense         : 148-neuron vanilla rate RNN with every weight trainable
+  * dense_small   : 26-neuron vanilla rate RNN, parameter-matched (~860 params)
 
     python cx.py --steps 1500
 """
@@ -75,8 +76,10 @@ class ConnectomeRNN(nn.Module):
         types = cx["type"]
         self.ut = sorted(set(types))
         tid = np.array([self.ut.index(t) for t in types])
+        self.dense = mode.startswith("dense")
+        if mode == "dense_small":           # parameter-matched unconstrained RNN
+            types = np.array(["EPG"] * 26)  # 26 neurons, all read out
         self.n = len(types)
-        self.dense = mode == "dense"
         self.alpha, self.substeps = alpha, substeps
         if self.dense:
             self.W = nn.Parameter(torch.randn(self.n, self.n) / np.sqrt(self.n))
@@ -152,7 +155,8 @@ def train(mode, steps, seed, T=60):
     rng = np.random.default_rng(seed)
     cx = load_cx()
     m = ConnectomeRNN(cx, mode, seed)
-    opt = torch.optim.Adam(m.parameters(), lr=0.02 if mode != "dense" else 3e-3)
+    lr = {"dense": 3e-3, "dense_small": 1e-2}.get(mode, 0.02)
+    opt = torch.optim.Adam(m.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
     t0 = time.time()
     for step in range(steps):
@@ -190,20 +194,22 @@ def main():
     ap.add_argument("--steps", type=int, default=1500)
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--threads", type=int, default=4)
-    ap.add_argument("--modes", default="connectome,type_shuffled,erdos_renyi,dense")
+    ap.add_argument("--modes", default="connectome,type_shuffled,erdos_renyi,dense,dense_small")
+    ap.add_argument("--T", type=int, default=60, help="training horizon (steps)")
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
     os.makedirs(os.path.join(HERE, "results", "cx"), exist_ok=True)
     os.makedirs(os.path.join(HERE, "checkpoints"), exist_ok=True)
     for mode in args.modes.split(","):
         for seed in range(args.seeds):
-            m = train(mode, args.steps, seed)
+            m = train(mode, args.steps, seed, T=args.T)
             r = evaluate(m)
-            r.update(mode=mode, seed=seed, params=n_params(m))
+            r.update(mode=mode + args.tag, seed=seed, params=n_params(m), train_T=args.T)
             print(mode, seed, r["err_deg_train_horizon"], r["err_deg_long_horizon"], flush=True)
-            with open(os.path.join(HERE, "results", "cx", f"{mode}_s{seed}.json"), "w") as f:
+            with open(os.path.join(HERE, "results", "cx", f"{mode}{args.tag}_s{seed}.json"), "w") as f:
                 json.dump(r, f)
-            torch.save(m.state_dict(), os.path.join(HERE, "checkpoints", f"cx_{mode}_s{seed}.pt"))
+            torch.save(m.state_dict(), os.path.join(HERE, "checkpoints", f"cx_{mode}{args.tag}_s{seed}.pt"))
 
 
 if __name__ == "__main__":

@@ -116,6 +116,8 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--curriculum", action="store_true",
+                    help="short conversations first (T=64, 4x batch) for the first half of training")
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
@@ -130,7 +132,10 @@ def main():
     t0 = time.time()
     for step in range(args.steps):
         batch = batch_facts if args.task == "facts" else batch_feedback
-        toks, tgt, _ = batch(vocab, args.batch, TRAIN_T, seed=args.seed * 10 ** 6 + step)
+        T, B = TRAIN_T, args.batch
+        if args.curriculum and step < args.steps // 2:
+            T, B = 64, 4 * args.batch
+        toks, tgt, _ = batch(vocab, B, T, seed=args.seed * 10 ** 6 + step)
         logits, _ = model(toks)
         loss, acc = loss_acc(logits, tgt)
         opt.zero_grad()

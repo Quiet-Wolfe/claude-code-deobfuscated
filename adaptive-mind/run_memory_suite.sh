@@ -1,9 +1,15 @@
 #!/bin/bash
-# Runs every model of experiment 2 (two at a time, 2 threads each).
-# Fly variants converge in a few hundred steps and get 1000; baselines get 2000.
+# Experiment 2 exactly as run for the results in README.md (2 jobs x 2 threads).
+# Fly variants converge in a few hundred steps and get 1000; baselines get more.
+# The transformer needs a short-conversation curriculum to get past the
+# induction-head plateau (without it: ~20% accuracy after 2000 steps at lr 2e-3,
+# see results/memory/transformer_lr2e-3_attempt1.json.bak).
 cd "$(dirname "$0")"
-run() { python3 train_memory.py --model $1 --steps $2 --threads 2 > logs/mem_$1.log 2>&1; }
-if [ -z "$SKIP_TRANSFORMER" ]; then TF="run transformer 2000;"; else TF="while kill -0 $SKIP_TRANSFORMER 2>/dev/null; do sleep 20; done;"; fi
-(run fly 1000; run fly_shuffled_pnkc 1000; run fly_no_apl 1000; run fly_frozen 1000) &
-(eval "$TF"; run gru 2000; run fly_learned_expansion 1000; run fly_no_expansion 1000) &
+export OMP_WAIT_POLICY=PASSIVE
+run() { python3 train_memory.py --threads 2 "$@" > logs/mem_$2.log 2>&1; }
+mkdir -p logs
+(run --model fly --steps 1000; run --model fly_shuffled_pnkc --steps 1000;
+ run --model fly_no_apl --steps 1000; run --model fly_frozen --steps 1000) &
+(run --model transformer --steps 4000 --lr 1e-3 --curriculum; run --model gru --steps 2000;
+ run --model fly_learned_expansion --steps 1000; run --model fly_no_expansion --steps 1000) &
 wait

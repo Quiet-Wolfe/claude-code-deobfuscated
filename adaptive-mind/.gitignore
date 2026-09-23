@@ -5,3 +5,4 @@ checkpoints/*
 !checkpoints/ponder_adaptive_s0.pt
 !checkpoints/cx_connectome_s0.pt
 __pycache__/
+!checkpoints/fly_learned_expansion_s0.pt

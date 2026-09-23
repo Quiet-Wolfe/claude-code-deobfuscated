@@ -31,6 +31,11 @@ from tasks import Vocab, chain_episode, QUERY, PAD
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def curriculum(step, steps, max_len):
+    """1 hop for the first 30% of training, then 2, then up to max_len (both models)."""
+    return 1 if step < 0.3 * steps else (min(2, max_len) if step < 0.6 * steps else max_len)
+
+
 def make_batch(vocab, B, n_chains, max_len, rng, min_len=1):
     seqs, qs = [], []
     for _ in range(B):
@@ -121,7 +126,7 @@ def train_fly(vocab, steps, seed, max_len=4, n_chains=6, fixed=None, B=32, lr=2e
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, lr, total_steps=steps, pct_start=0.05)
     t0 = time.time()
     for step in range(steps):
-        toks, start, end, hops = make_batch(vocab, B, n_chains, max_len, rng)
+        toks, start, end, hops = make_batch(vocab, B, n_chains, curriculum(step, steps, max_len), rng)
         W = model.write(toks)
         if fixed:
             logits, _ = model.think(W, start, fixed)
@@ -146,7 +151,7 @@ def train_transformer(vocab, steps, seed, max_len=4, n_chains=6, B=32, lr=1e-3, 
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, lr, total_steps=steps, pct_start=0.05)
     for step in range(steps):
-        toks, start, end, hops = make_batch(vocab, B, n_chains, max_len, rng)
+        toks, start, end, hops = make_batch(vocab, B, n_chains, curriculum(step, steps, max_len), rng)
         logits, tgt = transformer_forward(model, vocab, toks, start, end)
         loss = F.cross_entropy(logits.flatten(0, 1), tgt.flatten())
         opt.zero_grad()

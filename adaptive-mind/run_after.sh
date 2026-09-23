@@ -1,6 +1,7 @@
 #!/bin/bash
 # Second wave: waits for the memory suite, then feedback task + pondering.
 cd "$(dirname "$0")"
+export OMP_WAIT_POLICY=PASSIVE
 while pgrep -f run_memory_suite.sh > /dev/null; do sleep 30; done
 fb() { python3 train_memory.py --task feedback --model $1 --steps 1500 --threads 2 > logs/fb_$1.log 2>&1; }
 (fb fly; fb gru; fb transformer) &
