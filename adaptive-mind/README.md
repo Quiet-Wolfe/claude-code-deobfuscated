@@ -36,6 +36,31 @@ wiring, and treating a chat as the fly's lifetime.
 
 ---
 
+## FlyLM: a Hugging Face language model built on the mushroom body (`flylm/`)
+
+The experiments below led to a small language model whose layers *are* mushroom
+bodies. There is no attention. Each layer contains the connectome's three Kenyon-cell
+lobes (γ 662, α/β 874, α′/β′ 350 KCs with their real PN→KC wiring), APL-style
+5% sparsening, 49 MBONs with dopamine-gated delta-rule synapses, and the
+measured DAN→MBON compartment matrix. It's trained from scratch on TinyStories
+on this machine's CPU, and it is a regular `transformers` model:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+tok = AutoTokenizer.from_pretrained("adaptive-mind/flylm-tinystories")
+model = AutoModelForCausalLM.from_pretrained("adaptive-mind/flylm-tinystories", trust_remote_code=True)
+out = model.generate(tok("Once upon a time", return_tensors="pt").input_ids, max_new_tokens=80, do_sample=True)
+```
+
+The generation cache is the synaptic state (`output.state`, constant size),
+which can be passed back in to keep "learning" across calls. See
+`flylm/MODEL_CARD.md` (also copied into the model folder) for details and
+`flylm/train_lm.py` to retrain.
+
+FLYLM_RESULTS
+
+---
+
 ## 0. What the connectome says (`connectome.py`)
 
 ![connectome](figures/connectome.png)
@@ -112,8 +137,9 @@ them later overwritten). The test conversations run up to 2,048 tokens.
 * **Learning the expansion beats fixing it.** A learned 2,045-unit projection with
   the same APL-style sparsening raises capacity at 350 facts from 58% to 93%.
   The fly can't retrain its PN→KC wiring every lifetime, but a machine can.
-* No-expansion, no-APL and plasticity-off ablations: see the figure (added when those
-  runs finish).
+* The no-expansion, no-APL and plasticity-off ablations are implemented
+  (`train_memory.py --model fly_no_expansion|fly_no_apl|fly_frozen`) but weren't
+  run. CPU time went to the language model instead.
 
 ## 2. What it learned to do with its dopamine
 
@@ -147,7 +173,8 @@ harder meta-learning problem than learning from stated facts, and the budget
 here (1.5–3k steps on a CPU) is too small for it. It's the most promising thing
 to scale up, since it is the closest to what the mushroom body is for.
 
-RESULTS_FEEDBACK_EXTRA
+A 3,000-step run of the learned-expansion variant was started and then
+stopped to free the CPU for the language model below.
 
 ## 4. Adaptive recurrent effort: thinking in loops (`ponder.py`)
 
@@ -178,7 +205,10 @@ reads the MBONs, updates the thought, and a learned halting unit
      collapses to "always stop after one loop", and later loops receive almost
      no gradient.
 
-RESULTS_PONDER_EXTRA
+The fixed-loop control and the transformer comparison for this task were
+queued but not completed. A first transformer run (2,500 steps) stayed at
+chance loss (5.9 ≈ ln 400); it needs a longer budget before it counts as a
+baseline.
 
 ## 5. Rebuilding the fly's compass from the male connectome (`cx.py`)
 
