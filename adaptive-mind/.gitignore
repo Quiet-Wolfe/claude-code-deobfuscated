@@ -1,0 +1,10 @@
+logs/
+checkpoints/*
+!checkpoints/fly_s0.pt
+!checkpoints/feedback_fly_s0.pt
+!checkpoints/ponder_adaptive_s0.pt
+!checkpoints/cx_connectome_s0.pt
+__pycache__/
+!checkpoints/fly_learned_expansion_s0.pt
+!checkpoints/cx_type_shuffled_s0.pt
+flylm-tinystories/*.safetensors.tmp
