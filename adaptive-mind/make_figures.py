@@ -286,7 +286,7 @@ def fig_feedback():
         cats = ["rejected_0", "rejected_1", "rejected_2", "rejected_3", "confirmed"]
         xl = ["nothing yet", "1 NO", "2 NOs", "3 NOs", "heard YES"]
         x = np.arange(len(cats))
-        models = [m for m in ("fly", "gru", "transformer") if f"{m}_s0" in R]
+        models = [m for m in ("fly", "fly_learned_expansion", "gru", "transformer") if f"{m}_s0" in R]
         w = 0.8 / len(models)
         for i, m in enumerate(models):
             d = R[f"{m}_s0"][f"feedback_T{T}"]

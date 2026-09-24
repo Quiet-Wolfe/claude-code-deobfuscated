@@ -19,10 +19,10 @@ the connectome doesn't specify, and asks three questions:
 1. **Can it learn during inference?** New facts, told mid-conversation, stored
    only in fast synapses, then recalled far beyond any context window.
 2. **Can it decide how hard to think?** A recurrent "thinking loop" re-reads its
-   own synaptic memory and learns when to stop (your idea #1 + #2).
+   own synaptic memory and learns when to stop (adaptive recurrent effort).
 3. **Does the fly's wiring itself carry function?** Rebuild the heading compass
    (central complex) neuron-for-neuron from the connectome, train only ~860
-   scalars, and compare with rewired controls (your idea #3).
+   scalars, and compare with rewired controls.
 
 What is *not* new: fast weights (Hinton & Plaut 1987; Schmidhuber 1992; Ba et al.
 2016), differentiable/neuromodulated plasticity (Miconi et al. 2018, 2019), the
@@ -79,25 +79,137 @@ every conversation and change *only* by the local, dopamine-gated rule while the
 model reads. The update is exact and runs chunk-parallel (a unit-triangular solve
 per MBON, see `delta_memory`), so training is fast even on a CPU.
 
-RESULTS_MEMORY
+![memory](figures/memory.png)
+
+Every model is trained on 256-token conversations only (~25 facts, some of
+them later overwritten). The test conversations run up to 2,048 tokens.
+
+| model | trainable params | recall in a normal 256-token chat | 40 facts, asked 1.8k tokens later | 100 / 200 / 350 facts in one go |
+|---|---|---|---|---|
+| **FlyMem** (connectome PN→KC) | 189k | 99.9% | **99.1%** | 92 / 75 / 58% |
+| **FlyMem, learned expansion** | 425k | 100% | **100%** | **100 / 98 / 93%** |
+| Transformer, 256-token window | 672k | 100% | 1.3% | 51 / 14 / 6% |
+| GRU (memory in activations) | 364k | 22.5% | 6.3% | 4 / 3 / 2% |
+
+* The transformer is perfect **inside** its window and at chance outside it, by
+  construction. FlyMem has no window: its memory is a fixed 49 × 1,887 synapse
+  matrix that doesn't grow with the conversation, and it keeps working at 8× the
+  training length.
+* FlyMem learned its skill in ~200 training steps. The transformer sat on the
+  well-known induction-head plateau (≈20% for 2,000 steps at lr 2e-3). It needed
+  a short-conversation curriculum to become a fair baseline.
+* A plain GRU of similar size can't hold 25 arbitrary bindings in its
+  activations. This is the gap that synaptic memory fills.
+
+**Ablations** (`figures/memory_ablations.png`):
+
+![ablations](figures/memory_ablations.png)
+
+* **Real PN→KC wiring = random wiring with the same fan-in** (92% vs 91% at 100
+  facts). That agrees with the anatomy literature: fly PN→KC connectivity is
+  close to random (Caron et al. 2013). The function is in the *statistics*
+  (sparse, ~5 inputs, ×35 expansion), not in the individual synapses.
+* **Learning the expansion beats fixing it.** A learned 2,045-unit projection with
+  the same APL-style sparsening raises capacity at 350 facts from 58% to 93%.
+  The fly can't retrain its PN→KC wiring every lifetime, but a machine can.
+* No-expansion, no-APL and plasticity-off ablations: see the figure (added when those
+  runs finish).
 
 ## 2. What it learned to do with its dopamine
 
 ![dopamine](figures/dopamine_and_kc.png)
 
-RESULTS_DOPAMINE
+Nobody told the model *when* to learn. Meta-training shaped its 170 dopamine
+neurons so the plasticity gate opens (~0.9) exactly when a fact is being told,
+and stays nearly shut (~0.08) during questions and chatter. That's the fly's
+own logic: dopamine marks the moments worth remembering.
+
+The PN→KC expansion plus APL inhibition also does what it does in the fly. At
+the positions where the memory is actually read and written, the codes for two
+different entities overlap with cosine **0.61** in the 58 PN channels but
+**0.09** in the 2,045 Kenyon cells (5% active). The write and read codes of the
+*same* entity still match at **0.84**. So memories stop interfering with each
+other without losing their address.
 
 ## 3. Learning from praise and correction only (`--task feedback`)
 
-RESULTS_FEEDBACK
+A harder version of learning on the job: nobody ever states the answer. Someone
+tries an answer (`ASK e g`) and hears `YES` or `NO`. The model must work out
+the right value from the feedback alone, like a fly learning which odour is
+punished. There are 4 options per conversation, and an ideal Bayesian observer
+scores 51% overall (100% once a YES has been heard, 1/(4 − #NOs) otherwise).
+
+**Result: not solved yet.** Both FlyMem and a curriculum-trained transformer
+learned the option set (≈25% before any feedback, i.e. the right chance level),
+but they reach only 35–40% after hearing YES and don't use NO at all (overall
+28% vs the ideal 51%). Training loss was still falling slowly. This is a
+harder meta-learning problem than learning from stated facts, and the budget
+here (1.5–3k steps on a CPU) is too small for it. It's the most promising thing
+to scale up, since it is the closest to what the mushroom body is for.
+
+RESULTS_FEEDBACK_EXTRA
 
 ## 4. Adaptive recurrent effort: thinking in loops (`ponder.py`)
 
-RESULTS_PONDER
+![ponder](figures/ponder.png)
+
+The conversation contains links `LINK a b`, `LINK b c`, … in shuffled order, and
+the question `QUERY a` asks where a's chain ends. The number of hops is never
+given. The model answers by looping: it uses the current thought as a sensory
+cue into its plastic memory (PN→KC→APL, as when the fly smells an odour),
+reads the MBONs, updates the thought, and a learned halting unit
+(PonderNet) decides whether to stop.
+
+| hops needed | 1 | 2 | 3 | 4 | 5–10 (never trained) |
+|---|---|---|---|---|---|
+| accuracy | 99% | 89% | 69% | 39% | ≤ 15% |
+| loops it chose | 2.3 | 3.2 | 4.1 | 4.7 | ~5, then gives up |
+
+* **It learned to think longer on harder questions**, at close to *hops + 1* loops:
+  one memory read per hop, plus one to notice that the chain has ended. The
+  "end" signal is simply that the memory returns nothing, a familiarity
+  signal much like the MB's novelty responses.
+* **It doesn't extrapolate.** Beyond the trained range the loop count saturates
+  near 5, and errors compound per hop (≈ 0.9 per hop in range).
+* Two things were needed to make it work at all:
+  1. **Key the memory on the sensory code of the cue**, as the fly does, instead
+     of on the controller's summary of the context.
+  2. **Don't start with 1-hop-only training.** Otherwise the halting unit
+     collapses to "always stop after one loop", and later loops receive almost
+     no gradient.
+
+RESULTS_PONDER_EXTRA
 
 ## 5. Rebuilding the fly's compass from the male connectome (`cx.py`)
 
-RESULTS_CX
+![cx](figures/cx.png)
+
+148 neurons (46 EPG, 20 PEN_a, 22 PEN_b, 18 PEG, 42 Δ7) wired exactly as in the
+male CNS: synapse counts, with signs from predicted transmitters (ACh +,
+Glu/GABA −). Trainable: 25 cell-type-to-cell-type gains, 148 biases, input
+gains (angular velocity → PENs only, landmark → EPGs only) and a linear
+readout from EPGs. That's 859 numbers. Task: see a landmark for 5 steps, then
+keep track of heading in darkness from self-motion alone.
+
+| wiring (same 859 trainable numbers unless noted) | error at trained horizon | error at 3× horizon |
+|---|---|---|
+| **male-CNS connectome** | **9.1°, 9.0°, 20.7°** (3 seeds) | 21°, 21°, 61° |
+| same cell-type wiring, neuron-level map scrambled | 66–71° | ~90° (chance) |
+| random wiring, same edges and weights | 65–78° | ~90° (chance) |
+| unconstrained 26-neuron RNN (860 params) | 2.4–2.7° | 4.6–5.3° |
+| unconstrained 148-neuron RNN (22.7k params) | 1.4° | 2.6° |
+
+* **The wiring carries the function.** With identical parameters, only the
+  real neuron-to-neuron map integrates heading. Scrambling it inside each
+  cell-type pair (same types, same synapse counts, same parameter count)
+  drops performance to near chance.
+* **But it's not more parameter-efficient than a free network** of the same
+  size, and it drifts over long horizons. Its EPG activity (middle panel)
+  follows heading along the protocerebral-bridge axis but is broader than the
+  crisp bump real flies show. The likely missing pieces are the ring (ER)
+  neuron input, neuron-level gains and the real neuronal time constants.
+* Training on a 2× longer horizon made it worse (41° on the first seed), which
+  suggests an optimisation problem rather than a capacity limit.
 
 ---
 
