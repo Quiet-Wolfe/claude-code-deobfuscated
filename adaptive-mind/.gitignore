@@ -7,3 +7,4 @@ checkpoints/*
 __pycache__/
 !checkpoints/fly_learned_expansion_s0.pt
 !checkpoints/cx_type_shuffled_s0.pt
+flylm-tinystories/*.safetensors.tmp
