@@ -25,15 +25,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models import FlyMem, TransformerBaseline, n_params
+from models import TransformerBaseline, delta_memory, n_params
 from tasks import Vocab, chain_episode, QUERY, PAD
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def curriculum(step, steps, max_len):
-    """1 hop for the first 30% of training, then 2, then up to max_len (both models)."""
-    return 1 if step < 0.3 * steps else (min(2, max_len) if step < 0.6 * steps else max_len)
+    """Chains of 1-2 hops for the first 40% of training, then 1..max_len (both models).
+    (A 1-hop-only phase makes the halting unit collapse to 'always stop after
+    one loop', after which later loops get almost no gradient.)"""
+    return min(2, max_len) if step < 0.4 * steps else max_len
 
 
 def make_batch(vocab, B, n_chains, max_len, rng, min_len=1):
@@ -56,29 +58,60 @@ def make_batch(vocab, B, n_chains, max_len, rng, min_len=1):
 
 
 class FlyPonder(nn.Module):
-    """FlyMem writer + a recurrent 'thinking' loop over the fast weights."""
+    """Plastic mushroom-body memory + a recurrent 'thinking' loop over it.
 
-    def __init__(self, vocab, d_h=128):
+    As in the fly, the memory key is the *sensory* code of the cue: the token
+    just perceived goes through PN -> KC (connectome) -> APL. At `LINK a b` the
+    key is the KC code of `a` and the MBON target is a code for `b`; a GRU
+    controller watches the stream and drives the dopamine neurons that decide
+    when to write. While thinking, the current thought is turned back into a
+    sensory-like PN pattern and used as the next cue, so a retrieved `b`
+    becomes the probe for `b -> c`.
+    """
+
+    def __init__(self, vocab, d_emb=64, d_h=128):
         super().__init__()
-        self.vocab = vocab
-        self.mem = FlyMem(vocab.size, vocab.n_ent, d_h=d_h)
-        self.q0 = nn.Linear(self.mem.emb.embedding_dim, d_h)
-        self.cell = nn.GRUCell(self.mem.n_mbon, d_h)
-        self.halt = nn.Linear(d_h + 1, 1)
-        self.out = nn.Sequential(nn.Linear(d_h, d_h), nn.GELU(), nn.Linear(d_h, vocab.n_ent))
+        from models import load_mb, kwta
+        self.vocab, self.kwta = vocab, kwta
+        GK, COMP = load_mb("connectome")
+        self.n_glom, self.n_kc = GK.shape
+        self.n_dan, self.n_mbon = COMP.shape
+        self.k = int(round(0.05 * self.n_kc))
+        self.register_buffer("pn_kc", GK)
+        comp = COMP.clamp(min=0)
+        self.register_buffer("dan_mbon", comp / (comp.sum(0, keepdims=True) + 1e-6))
+        self.emb = nn.Embedding(vocab.size, d_emb)
+        self.ctrl = nn.GRU(d_emb, d_h, batch_first=True)
+        self.to_pn = nn.Linear(d_emb, self.n_glom)         # sensory code -> glomeruli
+        self.to_val = nn.Linear(d_emb, self.n_mbon)        # MBON target for the new item
+        self.to_dan = nn.Linear(d_h + d_emb, self.n_dan)
+        self.dan_bias = nn.Parameter(torch.full((self.n_mbon,), -2.0))
+        self.cell = nn.GRUCell(self.n_mbon, d_emb)          # retrieved MBON pattern -> next thought
+        self.halt = nn.Linear(d_emb + 1, 1)
+        self.out = nn.Sequential(nn.Linear(d_emb, d_h), nn.GELU(), nn.Linear(d_h, vocab.n_ent))
+
+    def keys(self, sensory):
+        z = F.relu(self.to_pn(sensory)) @ self.pn_kc
+        return F.normalize(self.kwta(z, self.k), dim=-1, eps=1e-6)
 
     def write(self, toks):
-        _, (_, W) = self.mem(toks)
+        x = self.emb(toks)
+        h, _ = self.ctrl(x)
+        prev = torch.cat([torch.zeros_like(x[:, :1]), x[:, :-1]], 1)
+        K = self.keys(prev)                                   # cue = what was just seen
+        V = self.to_val(x)
+        dan = F.relu(self.to_dan(torch.cat([h, x], -1)))
+        G = torch.sigmoid(dan @ self.dan_mbon * 4 + self.dan_bias)
+        _, W = delta_memory(K, V, G)
         return W
 
     def think(self, W, start, n_loops):
         """Returns per-loop logits (n,B,Q,E) and halting probs lambda (n,B,Q)."""
-        q = torch.tanh(self.q0(self.mem.emb(start + self.vocab.ent0)))     # (B,Q,d)
+        q = self.emb(start + self.vocab.ent0)                  # (B,Q,d)
         B, Q, d = q.shape
         logits, lam = [], []
         for _ in range(n_loops):
-            k = self.mem.keys(q)                                       # PN->KC->APL
-            r = torch.einsum("bmn,bqn->bqm", W, k)                      # MBON readout
+            r = torch.einsum("bmn,bqn->bqm", W, self.keys(q))   # MBON readout
             q = self.cell(r.reshape(B * Q, -1), q.reshape(B * Q, d)).view(B, Q, d)
             logits.append(self.out(q))
             lam.append(torch.sigmoid(self.halt(torch.cat([q, r.norm(dim=-1, keepdim=True)], -1)))[..., 0])
@@ -93,7 +126,7 @@ def halting_dist(lam):
     return lam * surv
 
 
-def ponder_loss(logits, lam, target, beta=0.01, prior=0.3):
+def ponder_loss(logits, lam, target, beta=0.05, prior=0.2):
     p = halting_dist(lam)                                           # (n,B,Q)
     n = logits.shape[0]
     ce = F.cross_entropy(logits.flatten(0, 2), target.expand(n, -1, -1).flatten(), reduction="none")
