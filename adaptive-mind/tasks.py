@@ -151,7 +151,7 @@ def batch_feedback(vocab, B, T, seed=None, **kw):
 # Chains, for the adaptive-effort experiment
 # ----------------------------------------------------------------------------
 
-def chain_episode(vocab, rng, n_chains, max_len, chatter=(0, 4)):
+def chain_episode(vocab, rng, n_chains, max_len, chatter=(0, 4), min_len=1):
     """Facts are links `LINK a b`. Entities form disjoint chains a1->a2->...->ak.
     Query `QUERY a1` asks for the *last* element of a1's chain. The number of
     hops is never given; the model must decide how long to think."""
@@ -159,7 +159,7 @@ def chain_episode(vocab, rng, n_chains, max_len, chatter=(0, 4)):
     ents = rng.choice(vocab.n_ent, size=min(n_need, vocab.n_ent), replace=False)
     chains, links, p = [], [], 0
     for _ in range(n_chains):
-        L = int(rng.integers(1, max_len + 1))      # number of hops
+        L = int(rng.integers(min_len, max_len + 1))  # number of hops
         c = ents[p:p + L + 1]; p += L + 1
         chains.append(c)
         links += [(c[i], c[i + 1]) for i in range(L)]

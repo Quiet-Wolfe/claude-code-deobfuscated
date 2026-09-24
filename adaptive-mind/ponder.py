@@ -41,10 +41,7 @@ def curriculum(step, steps, max_len):
 def make_batch(vocab, B, n_chains, max_len, rng, min_len=1):
     seqs, qs = [], []
     for _ in range(B):
-        while True:
-            toks, queries = chain_episode(vocab, rng, n_chains, max_len)
-            if all(q[2] >= min_len for q in queries):
-                break
+        toks, queries = chain_episode(vocab, rng, n_chains, max_len, min_len=min_len)
         seqs.append(toks)
         qs.append(queries)
     T = max(map(len, seqs))
@@ -243,9 +240,14 @@ def main():
     res = {}
     os.makedirs(os.path.join(HERE, "results", "ponder"), exist_ok=True)
     os.makedirs(os.path.join(HERE, "checkpoints"), exist_ok=True)
-    if args.only in ("all", "adaptive"):
-        m = train_fly(vocab, args.steps, args.seed)
-        torch.save(m.state_dict(), os.path.join(HERE, "checkpoints", f"ponder_adaptive_s{args.seed}.pt"))
+    if args.only in ("all", "adaptive", "eval_adaptive"):
+        ck = os.path.join(HERE, "checkpoints", f"ponder_adaptive_s{args.seed}.pt")
+        if args.only == "eval_adaptive":
+            m = FlyPonder(vocab)
+            m.load_state_dict(torch.load(ck))
+        else:
+            m = train_fly(vocab, args.steps, args.seed)
+            torch.save(m.state_dict(), ck)
         res["adaptive"] = evaluate(vocab, fly=m)
         res["params_fly"] = n_params(m)
         print("adaptive", json.dumps(res["adaptive"]))
@@ -258,7 +260,8 @@ def main():
         res["transformer"] = evaluate(vocab, tf=m)
         res["params_transformer"] = n_params(m)
         print("transformer", json.dumps(res["transformer"]))
-    with open(os.path.join(HERE, "results", "ponder", f"ponder_{args.only}_s{args.seed}.json"), "w") as f:
+    tag = args.only.replace("eval_", "")
+    with open(os.path.join(HERE, "results", "ponder", f"ponder_{tag}_s{args.seed}.json"), "w") as f:
         json.dump(res, f, indent=1)
 
 
